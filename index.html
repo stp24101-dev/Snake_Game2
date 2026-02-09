@@ -1,0 +1,347 @@
+<!-- ...existing code... -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เกมงู</title>
+    <style>
+        :root{
+            --bg:#0b1020;
+            --card:#0f1724;
+            --accent:#00a152;
+            --muted:#9aa4b2;
+        }
+        *{box-sizing:border-box;margin:0;padding:0}
+        html,body{height:100%}
+        body{
+            font-family: "Segoe UI", Tahoma, Roboto, Arial, sans-serif;
+            background: linear-gradient(180deg,#061427 0%, #0b1020 100%);
+            color:#e6eef6;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:12px;
+            padding:18px;
+        }
+        .topbar{
+            width:100%;
+            max-width:520px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+        }
+        .topbar h1{font-size:20px}
+        .score{font-size:14px;color:var(--muted)}
+        .game-wrap{
+            width:100%;
+            max-width:520px;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            position:relative;
+        }
+        canvas#gameCanvas{
+            background:linear-gradient(180deg,#07142b,#06324a);
+            border-radius:8px;
+            box-shadow:0 6px 20px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.2);
+            touch-action: none;
+            width:400px;
+            height:400px;
+        }
+        /* overlay / loading screen */
+        .overlay{
+            position:absolute;
+            inset:0;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            background:rgba(3,7,12,0.6);
+            z-index:20;
+        }
+        .loader-card{
+            width:320px;
+            background:var(--card);
+            border-radius:12px;
+            padding:18px;
+            text-align:center;
+            box-shadow:0 8px 30px rgba(0,0,0,0.6);
+        }
+        .loader-card h2{margin-top:8px;margin-bottom:6px}
+        .loader-card p{color:var(--muted);font-size:13px;margin-bottom:12px}
+        .logo img{width:140px;height:auto;margin:0 auto;display:block}
+        .preview-row{display:flex;justify-content:center;gap:18px;margin:12px 0}
+        .preview-item{display:flex;flex-direction:column;align-items:center;color:var(--muted);font-size:13px}
+        .preview-item img{width:56px;height:56px;border-radius:8px;background:#081722;padding:6px}
+        .progress{height:10px;background:#0a1622;border-radius:999px;overflow:hidden;margin:8px 0}
+        .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#00c57a);transition:width 300ms ease}
+        .btn{
+            margin-top:10px;
+            padding:8px 12px;
+            border-radius:8px;
+            background:var(--accent);
+            color:#04221a;
+            font-weight:700;
+            border:none;
+            cursor:pointer;
+        }
+        .btn:disabled{opacity:0.6;cursor:not-allowed}
+        .footer{color:var(--muted);font-size:13px;margin-top:6px}
+        @media (max-width:420px){
+            .loader-card{width:90%}
+            canvas#gameCanvas{width:360px;height:360px}
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <h1>เกมงู (Snake)</h1>
+        <div class="score" id="scoreDisplay">คะแนน: 0</div>
+    </header>
+
+    <main class="game-wrap">
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+        <div id="overlay" class="overlay">
+            <div class="loader-card">
+                <div class="logo">
+                    <img id="logoImg" alt="โลโก้เกม" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='60'><rect rx='12' ry='12' width='140' height='60' fill='%230072b0'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='20' fill='white'>เกมงู</text></svg>">
+                </div>
+                <h2>กำลังโหลดเกม...</h2>
+                <p>เตรียมความพร้อม สนุกได้เลยเมื่อโหลดเสร็จ</p>
+
+                <div class="progress">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+
+                <div class="preview-row">
+                    <div class="preview-item">
+                        <img id="foodPreview" alt="อาหาร" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='60'><circle cx='30' cy='30' r='26' fill='%23e53935' stroke='white' stroke-width='3'/></svg>">
+                        <div>อาหาร</div>
+                    </div>
+                    <div class="preview-item">
+                        <img alt="งู" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='60'><rect rx='8' ry='8' x='6' y='18' width='48' height='12' fill='%2300a152'/></svg>">
+                        <div>งู</div>
+                    </div>
+                </div>
+
+                <button id="startBtn" class="btn" disabled>เริ่มเกม</button>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        คุมด้วยลูกศร ← ↑ → ↓ หรือ W A S D — สัมผัสบนมือถือยังไม่รองรับ
+    </footer>
+
+    <script>
+        /* ตรรกะเกม: Game class (ไม่ใช่โมดูล) */
+        class Game {
+            constructor(canvas, foodImage) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.gridSize = 20;
+                this.cols = Math.floor(canvas.width / this.gridSize);
+                this.rows = Math.floor(canvas.height / this.gridSize);
+                this.foodImage = foodImage || null;
+                this.reset();
+            }
+
+            reset(){
+                this.direction = {x:1,y:0};
+                const midX = Math.floor(this.cols/2);
+                const midY = Math.floor(this.rows/2);
+                this.snake = [
+                    {x: midX-1, y: midY},
+                    {x: midX, y: midY},
+                    {x: midX+1, y: midY},
+                ];
+                this.growSegments = 0;
+                this.spawnFood();
+                this.score = 0;
+                this.over = false;
+            }
+
+            spawnFood(){
+                const randPos = () => ({
+                    x: Math.floor(Math.random()*this.cols),
+                    y: Math.floor(Math.random()*this.rows)
+                });
+                let pos = randPos();
+                while(this.snake.some(s => s.x === pos.x && s.y === pos.y)){
+                    pos = randPos();
+                }
+                this.food = pos;
+            }
+
+            setDirection(dx,dy){
+                if (this.direction.x === -dx && this.direction.y === -dy) return;
+                this.direction = {x:dx,y:dy};
+            }
+
+            update(){
+                if (this.over) return;
+                const head = this.snake[this.snake.length-1];
+                const newHead = {x: head.x + this.direction.x, y: head.y + this.direction.y};
+
+                if (newHead.x < 0 || newHead.x >= this.cols || newHead.y < 0 || newHead.y >= this.rows) {
+                    this.over = true;
+                    return;
+                }
+
+                if (this.snake.some(s => s.x === newHead.x && s.y === newHead.y)) {
+                    this.over = true;
+                    return;
+                }
+
+                this.snake.push(newHead);
+
+                if (newHead.x === this.food.x && newHead.y === this.food.y){
+                    this.score += 1;
+                    this.growSegments += 1;
+                    this.spawnFood();
+                }
+
+                if (this.growSegments > 0) {
+                    this.growSegments--;
+                } else {
+                    this.snake.shift();
+                }
+            }
+
+            draw(){
+                const ctx = this.ctx;
+                ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+
+                // background
+                ctx.fillStyle = '#04263a';
+                ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+
+                // draw food
+                const fpx = this.food.x * this.gridSize;
+                const fpy = this.food.y * this.gridSize;
+                if (this.foodImage && this.foodImage.complete) {
+                    ctx.drawImage(this.foodImage, fpx, fpy, this.gridSize, this.gridSize);
+                } else {
+                    ctx.fillStyle = '#e53935';
+                    ctx.beginPath();
+                    ctx.arc(fpx + this.gridSize/2, fpy + this.gridSize/2, this.gridSize/2 - 2, 0, Math.PI*2);
+                    ctx.fill();
+                }
+
+                // draw snake
+                for (let i=0;i<this.snake.length;i++){
+                    const s = this.snake[i];
+                    const x = s.x * this.gridSize;
+                    const y = s.y * this.gridSize;
+                    if (i === this.snake.length-1){
+                        ctx.fillStyle = '#00e676';
+                        ctx.fillRect(x, y, this.gridSize, this.gridSize);
+                        ctx.fillStyle = '#002b1f';
+                        const ex = x + (this.direction.x > 0 ? this.gridSize - 6 : 4);
+                        const ey = y + 6;
+                        ctx.fillRect(ex, ey, 3, 3);
+                    } else {
+                        ctx.fillStyle = '#00a152';
+                        ctx.fillRect(x+1, y+1, this.gridSize-2, this.gridSize-2);
+                    }
+                }
+            }
+        }
+
+        /* main script */
+        const canvas = document.getElementById('gameCanvas');
+        const overlay = document.getElementById('overlay');
+        const startBtn = document.getElementById('startBtn');
+        const progressBar = document.getElementById('progressBar');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+
+        // สร้างภาพอาหารจาก SVG data URL
+        const foodSvg = "<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><circle cx='20' cy='20' r='18' fill='%23e53935' stroke='white' stroke-width='3'/></svg>";
+        const foodImg = new Image();
+        foodImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(foodSvg);
+
+        // จำลองการโหลด assets
+        function loadAssetsSimulated(){
+            return new Promise((resolve) => {
+                let p = 0;
+                const id = setInterval(() => {
+                    p += Math.floor(Math.random()*20)+10;
+                    if (p >= 100) p = 100;
+                    progressBar.style.width = p + '%';
+                    if (p === 100){
+                        clearInterval(id);
+                        setTimeout(resolve, 350);
+                    }
+                }, 180);
+            });
+        }
+
+        let game = null;
+        let tickInterval = null;
+        let speed = 120;
+
+        function startGameLoop(){
+            if (tickInterval) clearInterval(tickInterval);
+            tickInterval = setInterval(() => {
+                if (!game) return;
+                game.update();
+                game.draw();
+                scoreDisplay.textContent = 'คะแนน: ' + game.score;
+                if (game.over){
+                    clearInterval(tickInterval);
+                    showGameOver();
+                }
+            }, speed);
+        }
+
+        function showGameOver(){
+            overlay.classList.add('show');
+            overlay.style.display = 'flex';
+            overlay.querySelector('.loader-card h2').textContent = 'เกมจบแล้ว';
+            overlay.querySelector('.loader-card p').textContent = 'คะแนนสุดท้าย: ' + (game ? game.score : 0);
+            startBtn.textContent = 'เล่นอีกครั้ง';
+            startBtn.disabled = false;
+        }
+
+        function initNewGame(){
+            // ตั้งขนาด canvas จริงตาม attribute เพื่อให้การคำนวณ grid ถูกต้อง
+            canvas.width = parseInt(canvas.getAttribute('width')) || 400;
+            canvas.height = parseInt(canvas.getAttribute('height')) || 400;
+            game = new Game(canvas, foodImg);
+            game.foodImage = foodImg;
+            scoreDisplay.textContent = 'คะแนน: 0';
+            startBtn.textContent = 'เริ่มเกม';
+            startBtn.disabled = false;
+            // วาดครั้งแรกเพื่อให้เห็นสภาพเริ่มต้น
+            game.draw();
+        }
+
+        // keyboard controls
+        window.addEventListener('keydown', (e) => {
+            const key = e.key;
+            if (!game || game.over) return;
+            if (key === 'ArrowUp' || key === 'w' || key === 'W') game.setDirection(0,-1);
+            if (key === 'ArrowDown' || key === 's' || key === 'S') game.setDirection(0,1);
+            if (key === 'ArrowLeft' || key === 'a' || key === 'A') game.setDirection(-1,0);
+            if (key === 'ArrowRight' || key === 'd' || key === 'D') game.setDirection(1,0);
+        });
+
+        // ปุ่มเริ่มและขั้นตอนบูต
+        (async function boot(){
+            await loadAssetsSimulated();
+            startBtn.disabled = false;
+            startBtn.addEventListener('click', () => {
+                initNewGame();
+                overlay.classList.remove('show');
+                overlay.style.display = 'none';
+                startGameLoop();
+            });
+            // เตรียมเกมเริ่มต้นให้เห็นก่อนเล่น
+            initNewGame();
+        })();
+    </script>
+</body>
+</html>
+<!-- ...existing code... -->
